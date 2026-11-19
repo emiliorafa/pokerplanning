@@ -1,0 +1,2 @@
+# Sem dependências: o servidor usa apenas a biblioteca padrão do Python 3.8+.
+# Este arquivo existe para que plataformas como Render/Railway detectem o projeto como Python.
