@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Planning Poker — servidor em tempo real, sem dependências externas.
+Planning Poker Boitatá — servidor em tempo real, sem dependências externas.
 
 Requer apenas Python 3.8+ (biblioteca padrão).
 
@@ -942,7 +942,7 @@ def main():
     threading.Thread(target=janitor, daemon=True).start()
     ThreadingHTTPServer.daemon_threads = True
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
-    print("Planning Poker rodando!")
+    print("Planning Poker Boitatá rodando!")
     print(f"  Neste computador:   http://localhost:{PORT}")
     if HOST in ("0.0.0.0", ""):
         print(f"  Na rede/VPN:        http://{lan_ip()}:{PORT}")

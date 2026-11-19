@@ -1,4 +1,4 @@
-# Planning Poker para refinamentos
+# Planning Poker Boitatá
 
 Planning poker em tempo real, inspirado no planningpokeronline.com e no planning-poker-agile.web.app.
 Sem dependências: só precisa de **Python 3.8+**.

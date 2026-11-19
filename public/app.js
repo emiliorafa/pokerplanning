@@ -1,4 +1,4 @@
-/* Planning Poker — front-end (JavaScript puro, sem build). */
+/* Planning Poker Boitatá — front-end (JavaScript puro, sem build). */
 (() => {
   'use strict';
 
@@ -41,7 +41,8 @@
   };
 
   const ICON = {
-    logo: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="7" width="15" height="21" rx="3.5" fill="var(--primary-300)" transform="rotate(-12 10.5 17.5)"/><rect x="12" y="4" width="16" height="23" rx="3.5" fill="var(--primary)"/><text x="20" y="20.5" font-size="11" font-weight="800" fill="#fff" text-anchor="middle" font-family="Inter,Arial,sans-serif">5</text></svg>',
+    // carta com a cobrinha do Boitatá
+    logo: '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2.5" y="8" width="15" height="21" rx="3.5" fill="var(--primary-300)" transform="rotate(-12 10 18.5)"/><rect x="11" y="3" width="18" height="25" rx="4" fill="var(--primary)"/><path d="M15.5 23.5c0-3.2 8.5-2.4 8.5-6.2s-8-2.6-8-6.1c0-1.6 1.6-2.7 3.6-2.7" fill="none" stroke="var(--primary-ink)" stroke-width="2.6" stroke-linecap="round"/><circle cx="21.2" cy="8.4" r="2.3" fill="var(--primary-ink)"/><circle cx="21.9" cy="7.9" r=".75" fill="var(--primary)"/></svg>',
     sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
     moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
     link: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
@@ -64,6 +65,51 @@
     next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
     redo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M1 4v6h6"/><path d="M3.5 15a9 9 0 1 0 2.1-9.4L1 10"/></svg>',
   };
+
+  // Boitatá, a cobra de fogo, passando por baixo das cartas na tela inicial
+  // Linha central em 3 curvas; o contorno é gerado afinando do pescoço até a ponta do rabo.
+  const SNAKE_CURVE = [
+    [8, 118, 48, 136, 80, 86, 128, 100],
+    [128, 100, 176, 114, 206, 138, 252, 106],
+    [252, 106, 298, 74, 318, 46, 356, 58],
+  ];
+  const snakeWidth = (u) => {
+    if (u < 1.4) { const k = u / 1.4; return 2 + 16 * k * k * (3 - 2 * k); }
+    if (u > 2.6) return 18 - 4 * ((u - 2.6) / 0.4);
+    return 18;
+  };
+  const SNAKE_OUTLINE = (() => {
+    const left = [], right = [], N = 40;
+    SNAKE_CURVE.forEach(([x0, y0, x1, y1, x2, y2, x3, y3], seg) => {
+      for (let i = seg ? 1 : 0; i <= N; i++) {
+        const t = i / N, m = 1 - t;
+        const x = m * m * m * x0 + 3 * m * m * t * x1 + 3 * m * t * t * x2 + t * t * t * x3;
+        const y = m * m * m * y0 + 3 * m * m * t * y1 + 3 * m * t * t * y2 + t * t * t * y3;
+        const dx = 3 * m * m * (x1 - x0) + 6 * m * t * (x2 - x1) + 3 * t * t * (x3 - x2);
+        const dy = 3 * m * m * (y1 - y0) + 6 * m * t * (y2 - y1) + 3 * t * t * (y3 - y2);
+        const len = Math.hypot(dx, dy) || 1, h = snakeWidth(seg + t) / 2;
+        left.push([x - (dy / len) * h, y + (dx / len) * h]);
+        right.push([x + (dy / len) * h, y - (dx / len) * h]);
+      }
+    });
+    return 'M' + left.concat(right.reverse()).map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L') + 'Z';
+  })();
+  const SNAKE_ART = `<svg class="snake" viewBox="0 0 420 170" aria-hidden="true">
+    <defs>
+      <linearGradient id="fogo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="390" y2="0">
+        <stop offset="0" stop-color="var(--fire-1)"/><stop offset=".5" stop-color="var(--fire-2)"/><stop offset="1" stop-color="var(--fire-3)"/>
+      </linearGradient>
+    </defs>
+    <path class="snake-glow" d="${SNAKE_OUTLINE}"/>
+    <path class="snake-body" d="${SNAKE_OUTLINE}"/>
+    <path class="snake-scales" d="M128 100C176 114 206 138 252 106S318 46 350 56"/>
+    <g transform="translate(352 57) rotate(17) scale(1.3)">
+      <path class="snake-tongue" d="M30 0h10m0 0l5-4m-5 4l5 4"/>
+      <path class="snake-head" d="M-8-9C4-15 22-12 31 0 22 12 4 15-8 9Z"/>
+      <circle class="snake-eye" cx="13" cy="-5.5" r="3.2"/><ellipse class="snake-pupil" cx="13.6" cy="-5.5" rx="1" ry="2.4"/>
+      <circle class="snake-eye" cx="13" cy="5.5" r="3.2"/><ellipse class="snake-pupil" cx="13.6" cy="5.5" rx="1" ry="2.4"/>
+    </g>
+  </svg>`;
 
   const app = $('#app');
 
@@ -168,25 +214,22 @@
 
   // ================================================================== HOME
   function renderHome() {
-    document.title = 'Planning Poker';
+    document.title = 'Planning Poker Boitatá';
     const profile = store.get('pp:profile', {});
     const recent = store.get('pp:recent', []).slice(0, 6);
     app.innerHTML = `
-      <header class="topbar"><a class="brand" href="/">${ICON.logo}<span>Planning Poker</span></a>
+      <header class="topbar"><a class="brand" href="/">${ICON.logo}<span>Planning Poker <b>Boitatá</b></span></a>
         <div class="topbar-actions">${themeBtn()}</div></header>
       <main class="home">
         <section class="hero">
-          <span class="eyebrow">Para cerimônias de refinamento</span>
-          <h1>Estime em equipe,<br><span class="hl">em tempo real.</span></h1>
-          <p class="lead">Crie uma sala, organize os tópicos e mande um link para o time. Os devs entram só com nome ou apelido — sem cadastro, sem login.</p>
-          <ul class="hero-points">
-            <li><b>Tópicos separados</b> com estimativa final e histórico</li>
-            <li><b>Várias rodadas</b> por tópico, quando não houver consenso</li>
-            <li><b>Link público</b> para votar de qualquer lugar</li>
-            <li><b>Média, mediana e concordância</b> calculadas na hora</li>
-          </ul>
-          <div class="hero-cards" aria-hidden="true">
-            <span class="hc" style="--r:-14deg">3</span><span class="hc hc-on" style="--r:-4deg">5</span><span class="hc" style="--r:7deg">8</span><span class="hc" style="--r:16deg">13</span>
+          <span class="eyebrow">Refinamento das squads</span>
+          <h1>Planning Poker<br><span class="hl">Boitatá</span></h1>
+          <p class="lead">Crie a sala, mande o link para o time e estimem juntos.</p>
+          <div class="hero-art" aria-hidden="true">
+            ${SNAKE_ART}
+            <div class="hero-cards">
+              <span class="hc" style="--r:-14deg">3</span><span class="hc hc-on" style="--r:-4deg">5</span><span class="hc" style="--r:7deg">8</span><span class="hc" style="--r:16deg">13</span>
+            </div>
           </div>
           ${recent.length ? `<div class="recent"><h4>Salas recentes</h4>${recent.map((r) => `
             <a class="recent-item" href="/r/${esc(r.id)}"><span>${esc(r.name)}</span>${r.admin ? '<span class="tag tag-primary">Facilitador</span>' : '<span class="tag">Participante</span>'}</a>`).join('')}</div>` : ''}
@@ -308,14 +351,14 @@
       return renderCenter(`<h2>Não foi possível conectar</h2><p class="muted">${esc(err.message)}</p>
         <button class="btn btn-primary" onclick="location.reload()">Tentar novamente</button>`);
     }
-    document.title = `${R.info.name} · Planning Poker`;
+    document.title = `${R.info.name} · Planning Poker Boitatá`;
     connect();
     setInterval(tick, 500);
     narrowMq.addEventListener('change', () => { if (R.view === 'room') { const ta = $('#table-area'); if (ta) ta._html = null; updateRoom(); } });
   }
 
   function renderCenter(inner) {
-    app.innerHTML = `<header class="topbar"><a class="brand" href="/">${ICON.logo}<span>Planning Poker</span></a>
+    app.innerHTML = `<header class="topbar"><a class="brand" href="/">${ICON.logo}<span>Planning Poker <b>Boitatá</b></span></a>
       <div class="topbar-actions">${themeBtn()}</div></header><main class="center-screen"><div class="panel center-card">${inner}</div></main>`;
   }
   function renderGone() {
@@ -422,7 +465,7 @@
       const cnt = $('#join-online');
       if (cnt) cnt.textContent = onlineText();
     }
-    document.title = `${msg.room.name} · Planning Poker`;
+    document.title = `${msg.room.name} · Planning Poker Boitatá`;
   }
 
   function onlineText() {
@@ -452,7 +495,7 @@
     const profile = store.get('pp:profile', {});
     const room = R.state ? R.state.room : R.info;
     app.innerHTML = `
-      <header class="topbar"><a class="brand" href="/">${ICON.logo}<span>Planning Poker</span></a>
+      <header class="topbar"><a class="brand" href="/">${ICON.logo}<span>Planning Poker <b>Boitatá</b></span></a>
         <div class="topbar-actions">${themeBtn()}</div></header>
       <main class="center-screen">
         <form class="panel center-card join-card" id="join-form" autocomplete="off">
