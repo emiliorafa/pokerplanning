@@ -48,6 +48,17 @@ O link só funciona para quem consegue acessar o servidor. Opções:
 > Em hospedagens gratuitas o disco costuma ser apagado quando o serviço reinicia. As salas ficam em
 > `data/rooms.json` (ou em `DATA_DIR`). Monte um volume persistente se quiser manter o histórico.
 
+## Publicar no Railway
+
+O repositório já tem `Dockerfile` e `railway.json` (health check em `/healthz`).
+
+1. Em [railway.com](https://railway.com), **New Project → Deploy from GitHub repo** e escolha este repositório.
+2. Em **Settings → Networking**, clique em **Generate Domain** para ganhar o link público `https://….up.railway.app`.
+3. Para não perder as salas a cada deploy: no serviço, **Add Volume** com *mount path* `/data`.
+
+A porta é definida pelo próprio Railway (variável `PORT`); não é preciso configurá-la.
+Cada `git push` na branch `main` gera um novo deploy.
+
 ## Configuração (variáveis de ambiente)
 
 | Variável | Padrão | Descrição |
