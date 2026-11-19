@@ -42,6 +42,7 @@ MAX_ROOMS = 5000
 MAX_TOPICS = 300
 MAX_PLAYERS = 100
 PING_SECONDS = 15
+POLL_TIMEOUT = 12  # segundos sem consultar até um navegador em modo de consulta contar como offline
 
 DECKS = {
     "fibonacci": ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "?", "☕"],
@@ -56,6 +57,8 @@ TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 LOCK = threading.RLock()
 ROOMS = {}    # room_id -> room dict (persistido)
 CLIENTS = {}  # room_id -> set[Client] (conexões em tempo real)
+POLLERS = {}  # room_id -> {pid: último acesso}: navegadores em modo de consulta (rede que segura o streaming)
+KICKED = {}   # room_id -> set[pid]: removidos que ainda vão receber o aviso na próxima consulta
 
 
 class ApiError(Exception):
@@ -227,7 +230,7 @@ def purge_old_rooms():
     cutoff = now_ms() - ROOM_TTL_DAYS * 86_400_000
     with LOCK:
         dead = [rid for rid, room in ROOMS.items()
-                if room.get("updatedAt", 0) < cutoff and not CLIENTS.get(rid)]
+                if room.get("updatedAt", 0) < cutoff and not CLIENTS.get(rid) and not POLLERS.get(rid)]
         for rid in dead:
             del ROOMS[rid]
     if dead:
@@ -284,7 +287,53 @@ def online_pids(room_id):
     room = ROOMS.get(room_id)
     if not room:
         return set()
-    return {c.pid for c in CLIENTS.get(room_id, ()) if c.authed(room)}
+    online = {c.pid for c in CLIENTS.get(room_id, ()) if c.authed(room)}
+    cutoff = time.time() - POLL_TIMEOUT
+    online.update(pid for pid, seen in POLLERS.get(room_id, {}).items()
+                  if seen >= cutoff and pid in room["players"])
+    return online
+
+
+def poll_state(room_id, body):
+    """Plano B do tempo real: devolve o estado atual e marca o navegador como online."""
+    pid = valid_token(body.get("pid")) or ""
+    secret = valid_token(body.get("secret")) or ""
+    with LOCK:
+        room = get_room(room_id)
+        kicked = KICKED.get(room_id)
+        if kicked and pid in kicked:
+            kicked.discard(pid)
+            return {"type": "kicked"}, False
+        player = room["players"].get(pid)
+        authed = bool(player and same_secret(player["secret"], secret))
+        was_online = pid in online_pids(room_id)
+        if authed:
+            POLLERS.setdefault(room_id, {})[pid] = time.time()
+        online = online_pids(room_id)
+        state = public_state(room, pid, authed, online)
+    return state, authed and not was_online
+
+
+def expire_pollers():
+    """Tira da lista de online quem parou de consultar e avisa a sala."""
+    while True:
+        time.sleep(4)
+        changed = []
+        with LOCK:
+            cutoff = time.time() - POLL_TIMEOUT
+            for room_id, seen in list(POLLERS.items()):
+                stale = [pid for pid, ts in seen.items() if ts < cutoff]
+                for pid in stale:
+                    del seen[pid]
+                if not seen:
+                    POLLERS.pop(room_id, None)
+                if stale:
+                    room = ROOMS.get(room_id)
+                    if room:
+                        maybe_auto_reveal(room)
+                    changed.append(room_id)
+        for room_id in changed:
+            broadcast(room_id)
 
 
 def broadcast(room_id):
@@ -753,6 +802,8 @@ def handle_action(room_id, body):
 
         room["updatedAt"] = now_ms()
         kicked_clients = [c for c in CLIENTS.get(room_id, ()) if kicked_pid and c.pid == kicked_pid]
+        if kicked_pid and POLLERS.get(room_id, {}).pop(kicked_pid, None) is not None:
+            KICKED.setdefault(room_id, set()).add(kicked_pid)
 
     schedule_save()
     broadcast(room_id)
@@ -870,6 +921,13 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/rooms/(" + ROOM_ID_RE + r")/stream", path)
             if m:
                 return self.stream(m.group(1), self.read_json())
+            m = re.fullmatch(r"/api/rooms/(" + ROOM_ID_RE + r")/poll", path)
+            if m:
+                state, now_online = poll_state(m.group(1), self.read_json())
+                self.send_json(200, state)
+                if now_online:  # avisa os outros que esta pessoa entrou
+                    broadcast(m.group(1))
+                return None
             raise ApiError(404, "Rota não encontrada.")
         except ApiError as err:
             self.send_json(err.status, {"error": err.message})
@@ -940,6 +998,7 @@ def main():
     load_rooms()
     purge_old_rooms()
     threading.Thread(target=janitor, daemon=True).start()
+    threading.Thread(target=expire_pollers, daemon=True).start()
     ThreadingHTTPServer.daemon_threads = True
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     print("Planning Poker Boitatá rodando!")

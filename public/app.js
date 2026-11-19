@@ -311,6 +311,7 @@
   const R = {
     id: null, ident: null, info: null, state: null, view: null, offset: 0,
     conn: 'connecting', ctrl: null, retry: 0, kicked: false, gone: false, lastData: 0,
+    mode: 'stream', streamFails: 0, pollTimer: null, pollBusy: false, pollSoon: false,
     ui: {
       tab: 'topics', filter: 'all', expanded: new Set(), sidebarOpen: false,
       descOpen: false, autoAdvance: true, revealKey: null, flipUntil: 0, timerDoneFor: null,
@@ -327,9 +328,11 @@
 
   async function act(type, payload = {}) {
     try {
-      return await api(`/api/rooms/${R.id}/action`, {
+      const res = await api(`/api/rooms/${R.id}/action`, {
         type, pid: R.ident.pid, secret: R.ident.secret, adminToken: R.ident.adminToken || undefined, ...payload,
       });
+      pollNow();
+      return res;
     } catch (err) {
       toast(err.message, 'error');
       return null;
@@ -370,11 +373,15 @@
   }
 
   // -- streaming em tempo real (fetch + text/event-stream)
+  // Se a rede segurar o streaming (proxy/antivírus/VPN), cai para consultas periódicas.
   async function connect() {
     if (R.gone || R.kicked) return;
+    if (R.mode === 'poll') return poll();
     const ctrl = new AbortController();
     R.ctrl = ctrl;
     setConn(R.state ? 'reconnecting' : 'connecting');
+    R.lastData = Date.now();
+    let gotData = false;
     try {
       const res = await fetch(`/api/rooms/${R.id}/stream`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', signal: ctrl.signal,
@@ -390,6 +397,8 @@
         const { value, done } = await reader.read();
         if (done) break;
         R.lastData = Date.now();
+        gotData = true;
+        R.streamFails = 0;
         R.retry = 0;
         if (R.conn !== 'online') setConn('online');
         buf += dec.decode(value, { stream: true });
@@ -404,17 +413,49 @@
       if (ctrl.signal.aborted && (R.gone || R.kicked)) return;
     }
     if (R.ctrl !== ctrl || R.gone || R.kicked) return;
+    if (!gotData && ++R.streamFails >= (R.state ? 2 : 1)) {
+      console.warn('A rede não entregou o tempo real; usando consultas periódicas.');
+      R.mode = 'poll';
+      return poll();
+    }
     setConn('reconnecting');
     R.retry = Math.min(R.retry + 1, 6);
     setTimeout(connect, 600 * R.retry);
   }
-  // se a conexão "morrer" silenciosamente (sem pings), reconecta
+  // sem dados: 8 s para conectar, 40 s depois de conectado (o servidor manda ping a cada 15 s)
   setInterval(() => {
-    if (R.ctrl && R.conn === 'online' && Date.now() - R.lastData > 40000) R.ctrl.abort();
-  }, 5000);
+    if (!R.ctrl || R.mode === 'poll') return;
+    if (Date.now() - R.lastData > (R.conn === 'online' ? 40000 : 8000)) R.ctrl.abort();
+  }, 2000);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && R.ctrl && Date.now() - R.lastData > 20000) R.ctrl.abort();
+    if (document.hidden) return;
+    if (R.mode === 'poll') pollNow();
+    else if (R.ctrl && Date.now() - R.lastData > 20000) R.ctrl.abort();
   });
+
+  async function poll() {
+    clearTimeout(R.pollTimer);
+    if (R.gone || R.kicked) return;
+    if (R.pollBusy) { R.pollSoon = true; return; }
+    R.pollBusy = true;
+    try {
+      const msg = await api(`/api/rooms/${R.id}/poll`, { pid: R.ident.pid, secret: R.ident.secret });
+      R.lastData = Date.now();
+      R.retry = 0;
+      if (R.conn !== 'online') setConn('online');
+      onMessage(msg);
+    } catch (err) {
+      if (err.status === 404) { R.pollBusy = false; return renderGone(); }
+      setConn('reconnecting');
+      R.retry = Math.min(R.retry + 1, 6);
+    }
+    R.pollBusy = false;
+    if (R.gone || R.kicked) return;
+    const wait = R.pollSoon ? 0 : (R.retry ? 600 * R.retry : 2000);
+    R.pollSoon = false;
+    R.pollTimer = setTimeout(poll, wait);
+  }
+  function pollNow() { if (R.mode === 'poll') poll(); }
 
   function setConn(c) {
     R.conn = c;
